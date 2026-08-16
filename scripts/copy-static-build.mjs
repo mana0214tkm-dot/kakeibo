@@ -29,7 +29,13 @@ if (existsSync(serverEntry)) {
   renameSync(serverEntry, resolve("dist/server/server.cjs"))
   writeFileSync(
     resolve("dist/server/index.js"),
-    'import "./server.cjs"\n',
+    [
+      'import { createRequire } from "node:module"',
+      "",
+      "const require = createRequire(import.meta.url)",
+      'require("./server.cjs")',
+      "",
+    ].join("\n"),
     "utf8"
   )
 }
