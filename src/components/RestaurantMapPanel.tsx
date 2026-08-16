@@ -2,216 +2,267 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 
-declare global {
-  interface Window {
-    __googleMapsPromise?: Promise<GoogleMapsGlobal | undefined>
-    google?: {
-      maps: {
-        Geocoder: new () => {
-          geocode: (
-            request: { address: string },
-            callback: (
-              results: Array<{
-                geometry: {
-                  location: unknown
-                }
-              }> | null,
-              status: string
-            ) => void
-          ) => void
-        }
-        Map: new (
-          element: HTMLElement,
-          options: {
-            center: unknown
-            zoom: number
-            mapTypeControl: boolean
-            fullscreenControl: boolean
-            streetViewControl: boolean
-          }
-        ) => {
-          setCenter: (location: unknown) => void
-          setZoom: (zoom: number) => void
-        }
-        Marker: new (options: {
-          map: unknown
-          position: unknown
-          title: string
-        }) => {
-          setMap: (map: unknown) => void
-        }
-      }
-    }
-  }
+type LeafletLatLng = {
+  lat: number
+  lng: number
 }
 
-type GoogleMapsGlobal = NonNullable<Window["google"]>
+type LeafletMarker = {
+  addTo: (map: LeafletMap) => LeafletMarker
+  bindPopup: (content: string) => LeafletMarker
+  setLatLng: (latlng: LeafletLatLng) => LeafletMarker
+}
+
+type LeafletMap = {
+  setView: (latlng: LeafletLatLng, zoom: number) => LeafletMap
+  remove: () => void
+}
+
+type LeafletGlobal = {
+  map: (
+    element: HTMLElement,
+    options: {
+      zoomControl: boolean
+      scrollWheelZoom: boolean
+    }
+  ) => LeafletMap
+  tileLayer: (
+    urlTemplate: string,
+    options: {
+      attribution: string
+      maxZoom: number
+    }
+  ) => {
+    addTo: (map: LeafletMap) => void
+  }
+  marker: (latlng: LeafletLatLng) => LeafletMarker
+}
+
+declare global {
+  interface Window {
+    __leafletPromise?: Promise<LeafletGlobal>
+    L?: LeafletGlobal
+  }
+}
 
 type RestaurantMapPanelProps = {
   name: string
   address: string
 }
 
+type GeocodeResult = {
+  lat: string
+  lon: string
+}
+
 function buildMapQuery(name: string, address: string) {
   return [name, address].filter(Boolean).join(" ")
 }
 
-function buildFallbackEmbedUrl(query: string) {
-  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&z=16&output=embed`
+function buildMapOpenUrl(query: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
 }
 
-function loadGoogleMapsApi(apiKey: string): Promise<GoogleMapsGlobal | undefined> {
+function ensureLeafletStyles() {
+  const existing = document.querySelector<HTMLLinkElement>(
+    'link[data-leaflet-style="true"]'
+  )
+
+  if (existing) {
+    return
+  }
+
+  const link = document.createElement("link")
+  link.rel = "stylesheet"
+  link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  link.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  link.crossOrigin = ""
+  link.dataset.leafletStyle = "true"
+  document.head.appendChild(link)
+}
+
+function loadLeaflet(): Promise<LeafletGlobal> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("window is not available"))
   }
 
-  if (window.google?.maps) {
-    return Promise.resolve(window.google)
+  if (window.L) {
+    return Promise.resolve(window.L)
   }
 
-  if (window.__googleMapsPromise) {
-    return window.__googleMapsPromise
+  if (window.__leafletPromise) {
+    return window.__leafletPromise
   }
 
-  window.__googleMapsPromise = new Promise((resolve, reject) => {
+  ensureLeafletStyles()
+
+  window.__leafletPromise = new Promise((resolve, reject) => {
     const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[data-google-maps-loader="true"]'
+      'script[data-leaflet-script="true"]'
     )
 
     if (existingScript) {
-      existingScript.addEventListener("load", () => resolve(window.google))
-      existingScript.addEventListener("error", () =>
-        reject(new Error("Failed to load Google Maps script"))
-      )
+      existingScript.addEventListener("load", () => {
+        if (window.L) {
+          resolve(window.L)
+          return
+        }
+
+        reject(new Error("Leaflet loaded without global L"))
+      })
+      existingScript.addEventListener("error", () => {
+        reject(new Error("Failed to load Leaflet"))
+      })
       return
     }
 
     const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`
-    script.async = true
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    script.crossOrigin = ""
     script.defer = true
-    script.dataset.googleMapsLoader = "true"
-    script.onload = () => resolve(window.google)
-    script.onerror = () =>
-      reject(new Error("Failed to load Google Maps script"))
+    script.dataset.leafletScript = "true"
+    script.onload = () => {
+      if (window.L) {
+        resolve(window.L)
+        return
+      }
+
+      reject(new Error("Leaflet loaded without global L"))
+    }
+    script.onerror = () => {
+      reject(new Error("Failed to load Leaflet"))
+    }
     document.head.appendChild(script)
   })
 
-  return window.__googleMapsPromise
+  return window.__leafletPromise
+}
+
+async function geocodeAddress(query: string) {
+  const url = new URL("https://nominatim.openstreetmap.org/search")
+  url.searchParams.set("q", query)
+  url.searchParams.set("format", "jsonv2")
+  url.searchParams.set("limit", "1")
+  url.searchParams.set("countrycodes", "jp")
+  url.searchParams.set("accept-language", "ja")
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Geocoding failed: ${response.status}`)
+  }
+
+  const results = (await response.json()) as GeocodeResult[]
+  const first = results[0]
+
+  if (!first) {
+    throw new Error("No geocoding result")
+  }
+
+  return {
+    lat: Number(first.lat),
+    lng: Number(first.lon),
+  }
 }
 
 export function RestaurantMapPanel(props: RestaurantMapPanelProps) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? ""
-  const mapRef = useRef<HTMLDivElement | null>(null)
-  const mapInstanceRef = useRef<{
-    setCenter: (location: unknown) => void
-    setZoom: (zoom: number) => void
-  } | null>(null)
-  const markerRef = useRef<{
-    setMap: (map: unknown) => void
-  } | null>(null)
-  const [mode, setMode] = useState<"loading" | "api" | "fallback">(
-    apiKey ? "loading" : "fallback"
-  )
+  const mapHostRef = useRef<HTMLDivElement | null>(null)
+  const mapInstanceRef = useRef<LeafletMap | null>(null)
+  const markerRef = useRef<LeafletMarker | null>(null)
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
 
   const query = useMemo(
     () => buildMapQuery(props.name, props.address),
     [props.address, props.name]
   )
-  const fallbackEmbedUrl = useMemo(
-    () => buildFallbackEmbedUrl(query),
-    [query]
-  )
+  const mapOpenUrl = useMemo(() => buildMapOpenUrl(query), [query])
 
   useEffect(() => {
-    if (!apiKey) return
-
-    if (!mapRef.current) {
-      return
-    }
-
     let cancelled = false
 
-    async function initMap() {
+    async function renderMap() {
       try {
-        const google = await loadGoogleMapsApi(apiKey)
+        const [leaflet, location] = await Promise.all([
+          loadLeaflet(),
+          geocodeAddress(query),
+        ])
 
-        if (cancelled || !mapRef.current || !google?.maps) {
+        if (cancelled || !mapHostRef.current) {
           return
         }
 
-        const geocoder = new google.maps.Geocoder()
-        geocoder.geocode({ address: query }, (results, status) => {
-          if (cancelled || !mapRef.current || !google?.maps) {
-            return
-          }
-
-          const firstResult = results?.[0]
-          if (status !== "OK" || !firstResult) {
-            setMode("fallback")
-            return
-          }
-
-          const location = firstResult.geometry.location
-
-          if (!mapInstanceRef.current) {
-            mapInstanceRef.current = new google.maps.Map(mapRef.current, {
-              center: location,
-              zoom: 16,
-              mapTypeControl: false,
-              fullscreenControl: false,
-              streetViewControl: false,
-            })
-          } else {
-            mapInstanceRef.current.setCenter(location)
-            mapInstanceRef.current.setZoom(16)
-          }
-
-          if (markerRef.current) {
-            markerRef.current.setMap(null)
-          }
-
-          markerRef.current = new google.maps.Marker({
-            map: mapInstanceRef.current,
-            position: location,
-            title: props.name,
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = leaflet.map(mapHostRef.current, {
+            zoomControl: true,
+            scrollWheelZoom: true,
           })
 
-          setMode("api")
-        })
+          leaflet
+            .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+              attribution: "&copy; OpenStreetMap contributors",
+              maxZoom: 19,
+            })
+            .addTo(mapInstanceRef.current)
+        }
+
+        mapInstanceRef.current.setView(location, 16)
+
+        if (!markerRef.current) {
+          markerRef.current = leaflet.marker(location).addTo(mapInstanceRef.current)
+        } else {
+          markerRef.current.setLatLng(location)
+        }
+
+        markerRef.current.bindPopup(props.name)
+        setStatus("ready")
       } catch (error) {
         console.error(error)
-        setMode("fallback")
+        if (!cancelled) {
+          setStatus("error")
+        }
       }
     }
 
-    void initMap()
+    void renderMap()
 
     return () => {
       cancelled = true
     }
-  }, [apiKey, props.name, query])
+  }, [props.name, query])
 
-  if (mode === "fallback") {
-    return (
-      <div className="overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white shadow-sm">
-        <iframe
-          title={`${props.name} map fallback`}
-          src={fallbackEmbedUrl}
-          className="h-[360px] w-full border-0"
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-        />
-      </div>
-    )
-  }
+  useEffect(() => {
+    return () => {
+      mapInstanceRef.current?.remove()
+      mapInstanceRef.current = null
+      markerRef.current = null
+    }
+  }, [])
 
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white shadow-sm">
-      <div ref={mapRef} className="h-[360px] w-full bg-slate-100" />
-      {mode === "loading" ? (
-        <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-          Maps JavaScript API で地図を読み込み中です。
+      <div ref={mapHostRef} className="h-[360px] w-full bg-slate-100" />
+
+      {status !== "ready" ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <span>
+            {status === "loading"
+              ? "地図を読み込み中です。"
+              : "地図を表示できなかったため、外部マップを開いてください。"}
+          </span>
+
+          <a
+            href={mapOpenUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-700"
+          >
+            Googleマップで開く
+          </a>
         </div>
       ) : null}
     </div>
