@@ -30,10 +30,20 @@ if (existsSync(serverEntry)) {
   writeFileSync(
     resolve("dist/server/index.js"),
     [
+      'import { existsSync } from "node:fs"',
+      'import { join } from "node:path"',
       'import { createRequire } from "node:module"',
       "",
-      "const require = createRequire(import.meta.url)",
-      'require("./server.cjs")',
+      "const cwd = process.cwd()",
+      "const candidates = [join(cwd, 'dist', 'server', 'server.cjs'), join(cwd, 'server.cjs')]",
+      "const serverPath = candidates.find((candidate) => existsSync(candidate))",
+      "",
+      "if (!serverPath) {",
+      '  throw new Error(`Unable to locate server.cjs from ${cwd}`)',
+      "}",
+      "",
+      "const require = createRequire(serverPath)",
+      "require(serverPath)",
       "",
     ].join("\n"),
     "utf8"
