@@ -1,16 +1,45 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
 
-const outDir = resolve("out")
 const distDir = resolve("dist")
+const distServerDir = resolve("dist/server")
+const standaloneDir = resolve(".next/standalone")
+const staticDir = resolve(".next/static")
+const publicDir = resolve("public")
+const hostingFile = resolve(".openai/hosting.json")
 
-if (!existsSync(outDir)) {
-  console.warn("skip dist copy: out directory was not generated")
+if (!existsSync(standaloneDir)) {
+  console.warn("skip dist packaging: .next/standalone directory was not generated")
   process.exit(0)
 }
 
 rmSync(distDir, { force: true, recursive: true })
-mkdirSync(distDir, { recursive: true })
-cpSync(outDir, distDir, { recursive: true })
+mkdirSync(distServerDir, { recursive: true })
+cpSync(standaloneDir, distServerDir, { recursive: true, dereference: true })
 
-console.log("copied static export from out/ to dist/")
+const serverEntry = resolve("dist/server/server.js")
+if (existsSync(serverEntry)) {
+  renameSync(serverEntry, resolve("dist/server/index.js"))
+}
+
+if (existsSync(staticDir)) {
+  mkdirSync(resolve("dist/server/.next"), { recursive: true })
+  cpSync(staticDir, resolve("dist/server/.next/static"), {
+    recursive: true,
+    dereference: true,
+  })
+}
+
+if (existsSync(publicDir)) {
+  cpSync(publicDir, resolve("dist/server/public"), {
+    recursive: true,
+    dereference: true,
+  })
+}
+
+if (existsSync(hostingFile)) {
+  mkdirSync(resolve("dist/.openai"), { recursive: true })
+  cpSync(hostingFile, resolve("dist/.openai/hosting.json"))
+}
+
+console.log("packaged standalone Next.js build into dist/")

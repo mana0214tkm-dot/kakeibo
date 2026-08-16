@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { RestaurantMapPanel } from "@/components/RestaurantMapPanel"
 import { yen } from "@/lib/finance"
-import {
-  getMockRestaurantSuggestions,
-  type RestaurantSuggestionsResponse,
-} from "@/lib/restaurants"
+import type { RestaurantSuggestionsResponse } from "@/lib/restaurants"
 
 const panelClass =
   "rounded-[1.5rem] border border-slate-200/80 bg-white/82 p-5 shadow-sm"
@@ -43,12 +40,22 @@ export function RestaurantSuggestions(props: RestaurantSuggestionsProps) {
     setError("")
 
     try {
-      const data = getMockRestaurantSuggestions({
-        amount: Number(amount),
+      const searchParams = new URLSearchParams({
+        amount,
         area,
         keyword,
-        count: 4,
+        count: "4",
       })
+
+      const response = await fetch(`/api/restaurants?${searchParams.toString()}`, {
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(`request failed: ${response.status}`)
+      }
+
+      const data = (await response.json()) as RestaurantSuggestionsResponse
       setResult(data)
       setSelectedShopId(data.shops[0]?.id ?? "")
     } catch (fetchError) {
@@ -95,7 +102,7 @@ export function RestaurantSuggestions(props: RestaurantSuggestionsProps) {
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
             1人あたりの予算でお店候補を探して、そのまま地図で場所も確認できます。
-            現在はサンプル候補を使った検索と、OpenStreetMap ベースの地図表示に対応しています。
+            Hot Pepper API キーが未設定のときは、サンプル候補に自動で切り替わります。
           </p>
         </div>
 
