@@ -1,4 +1,11 @@
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { resolve } from "node:path"
 
 const distDir = resolve("dist")
@@ -19,7 +26,12 @@ cpSync(standaloneDir, distServerDir, { recursive: true, dereference: true })
 
 const serverEntry = resolve("dist/server/server.js")
 if (existsSync(serverEntry)) {
-  renameSync(serverEntry, resolve("dist/server/index.js"))
+  renameSync(serverEntry, resolve("dist/server/server.cjs"))
+  writeFileSync(
+    resolve("dist/server/index.js"),
+    'import "./server.cjs"\n',
+    "utf8"
+  )
 }
 
 if (existsSync(staticDir)) {
