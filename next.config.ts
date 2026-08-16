@@ -1,7 +1,6 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   reactCompiler: true,
   allowedDevOrigins: ["http://localhost:3000", "http://127.0.0.1:3000"],
   images: {
@@ -19,3 +18,5 @@ const nextConfig: NextConfig = {
 }
 
 export default nextConfig
+
+import("@opennextjs/cloudflare").then((m) => m.initOpenNextCloudflareForDev())
