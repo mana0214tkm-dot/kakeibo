@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --page-ink: #0f172a;
+  --page-muted: #475569;
+  --page-soft: #f8fafc;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 32%),
+    radial-gradient(circle at 85% 10%, rgba(13, 148, 136, 0.14), transparent 26%),
+    linear-gradient(180deg, #faf7ef 0%, #eef4f8 52%, #f8fafc 100%);
+  color: var(--page-ink);
+  font-family:
+    "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN",
+    "Yu Gothic",
+    "BIZ UDPGothic",
+    Meiryo,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*::selection {
+  background: rgba(13, 148, 136, 0.16);
+}
+
+a,
+button {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+img {
+  display: block;
+}
+
+progress {
+  appearance: none;
+}
+
+progress::-webkit-progress-bar {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+}
+
+progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #0f172a 0%, #0f766e 100%);
+  border-radius: 999px;
+}
+
+progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #0f172a 0%, #0f766e 100%);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.85);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.9);
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: #000 !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  a[href^="#"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  section,
+  header,
+  footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background:
+      radial-gradient(circle at top left, rgba(245, 158, 11, 0.16), transparent 36%),
+      linear-gradient(180deg, #faf7ef 0%, #eff5f8 55%, #f8fafc 100%);
+  }
+}
