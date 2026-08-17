@@ -172,7 +172,7 @@ const guideSteps = [
 
 function Card(props: { title: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-white/70 bg-white/92 p-5 shadow-[0_16px_35px_rgba(15,23,42,0.08)] backdrop-blur transition-transform duration-300 hover:-translate-y-1">
+    <div className="rounded-3xl border border-white/70 bg-white/92 p-5 shadow-[0_16px_35px_rgba(15,23,42,0.08)] backdrop-blur transition-transform duration-300 hover:-translate-y-1">
       <p className="text-sm font-medium text-slate-500">{props.title}</p>
       <p className="mt-2 text-2xl font-black tracking-tight text-slate-900">
         {props.value}

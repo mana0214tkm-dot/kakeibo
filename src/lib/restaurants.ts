@@ -1,4 +1,4 @@
-export type RestaurantSource = "hotpepper" | "mock"
+export type RestaurantSource = "hotpepper" | "openstreetmap" | "mock"
 
 export type RestaurantSuggestion = {
   id: string
@@ -290,6 +290,81 @@ async function fetchHotPepperJson<T>(path: string, searchParams: URLSearchParams
   }
 
   return (await response.json()) as T
+}
+
+export async function getOpenStreetMapRestaurantSuggestions(params: {
+  amount: number
+  area: string
+  keyword: string
+  count?: number
+}): Promise<RestaurantSuggestionsResponse> {
+  const amount = normalizeAmount(params.amount)
+  const area = params.area.trim()
+  const keyword = params.keyword.trim()
+  const count = Math.min(8, Math.max(1, params.count ?? 4))
+  const query = [area, keyword || "飲食店"].filter(Boolean).join(" ")
+  const searchParams = new URLSearchParams({
+    q: query,
+    format: "jsonv2",
+    addressdetails: "1",
+    limit: String(count),
+    "accept-language": "ja",
+  })
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?${searchParams.toString()}`,
+    {
+      cache: "no-store",
+      headers: { "User-Agent": "kakeibo-restaurant-search/1.0" },
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`OpenStreetMap request failed: ${response.status}`)
+  }
+
+  const results = (await response.json()) as Array<{
+    place_id?: number
+    display_name?: string
+    name?: string
+    type?: string
+    lat?: string
+    lon?: string
+  }>
+  const shops = results
+    .filter((place) => typeof place.place_id === "number")
+    .map<RestaurantSuggestion>((place) => ({
+      id: `osm-${place.place_id}`,
+      name: place.name || place.display_name?.split(",")[0] || "店舗",
+      genre: keyword || "飲食店",
+      budgetLabel: buildMockBudgetLabel(amount),
+      averageBudget: "予算は店舗ページでご確認ください",
+      catchCopy: "OpenStreetMapの検索結果です。",
+      address: place.display_name ?? "",
+      access: "",
+      url:
+        place.lat && place.lon
+          ? `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=18/${place.lat}/${place.lon}`
+          : "",
+      imageUrl: "",
+      open: "",
+      close: "",
+      source: "openstreetmap",
+    }))
+
+  if (shops.length === 0) {
+    throw new Error("No restaurant search results")
+  }
+
+  return {
+    amount,
+    area,
+    keyword,
+    budgetLabel: buildMockBudgetLabel(amount),
+    source: "openstreetmap",
+    sourceNote:
+      "OpenStreetMapの検索結果です。予算は目安のため、店舗ページで詳細をご確認ください。",
+    shops,
+  }
 }
 
 async function fetchBudgetMaster(apiKey: string) {

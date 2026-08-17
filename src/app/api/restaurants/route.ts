@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   getHotPepperRestaurantSuggestions,
-  getMockRestaurantSuggestions,
+  getOpenStreetMapRestaurantSuggestions,
 } from "@/lib/restaurants"
 
 function parseAmount(rawValue: string | null) {
@@ -45,12 +45,20 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json(
-    getMockRestaurantSuggestions({
-      amount,
-      area,
-      keyword,
-      count,
-    })
-  )
+  try {
+    return NextResponse.json(
+      await getOpenStreetMapRestaurantSuggestions({
+        amount,
+        area,
+        keyword,
+        count,
+      })
+    )
+  } catch (error) {
+    console.error("restaurant search failed", error)
+    return NextResponse.json(
+      { error: "検索結果を取得できませんでした。時間をおいて再度お試しください。" },
+      { status: 503 }
+    )
+  }
 }
