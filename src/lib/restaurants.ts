@@ -1,4 +1,8 @@
-export type RestaurantSource = "hotpepper" | "openstreetmap" | "mock"
+export type RestaurantSource =
+  | "google_places"
+  | "hotpepper"
+  | "openstreetmap"
+  | "mock"
 
 export type RestaurantSuggestion = {
   id: string
@@ -290,6 +294,114 @@ async function fetchHotPepperJson<T>(path: string, searchParams: URLSearchParams
   }
 
   return (await response.json()) as T
+}
+
+function googlePriceLevel(amount: number) {
+  if (amount <= 1500) return "PRICE_LEVEL_INEXPENSIVE"
+  if (amount <= 3000) return "PRICE_LEVEL_MODERATE"
+  if (amount <= 5000) return "PRICE_LEVEL_EXPENSIVE"
+  return "PRICE_LEVEL_VERY_EXPENSIVE"
+}
+
+function googlePriceLabel(priceLevel: string | undefined, amount: number) {
+  const labels: Record<string, string> = {
+    PRICE_LEVEL_FREE: "無料",
+    PRICE_LEVEL_INEXPENSIVE: "~1,500円",
+    PRICE_LEVEL_MODERATE: "1,500-3,000円",
+    PRICE_LEVEL_EXPENSIVE: "3,000-5,000円",
+    PRICE_LEVEL_VERY_EXPENSIVE: "5,000円以上",
+  }
+  return labels[priceLevel ?? ""] ?? buildMockBudgetLabel(amount)
+}
+
+export async function getGooglePlacesRestaurantSuggestions(params: {
+  apiKey: string
+  amount: number
+  area: string
+  keyword: string
+  count?: number
+}): Promise<RestaurantSuggestionsResponse | null> {
+  const amount = normalizeAmount(params.amount)
+  const area = params.area.trim()
+  const keyword = params.keyword.trim()
+  const count = Math.min(8, Math.max(1, params.count ?? 4))
+  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": params.apiKey,
+      "X-Goog-FieldMask": [
+        "places.id",
+        "places.displayName",
+        "places.formattedAddress",
+        "places.googleMapsUri",
+        "places.primaryTypeDisplayName",
+        "places.priceLevel",
+        "places.rating",
+        "places.editorialSummary",
+        "places.currentOpeningHours",
+      ].join(","),
+    },
+    body: JSON.stringify({
+      textQuery: `${area || "東京"} ${keyword || "レストラン"}`,
+      languageCode: "ja",
+      regionCode: "JP",
+      includedType: "restaurant",
+      maxResultCount: count,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Google Places request failed: ${response.status}`)
+  }
+
+  const data = (await response.json()) as {
+    places?: Array<{
+      id?: string
+      displayName?: { text?: string }
+      formattedAddress?: string
+      googleMapsUri?: string
+      primaryTypeDisplayName?: { text?: string }
+      priceLevel?: string
+      rating?: number
+      editorialSummary?: { text?: string }
+      currentOpeningHours?: { weekdayDescriptions?: string[] }
+    }>
+  }
+  const shops = (data.places ?? [])
+    .filter((place) => typeof place.id === "string" && place.displayName?.text)
+    .map<RestaurantSuggestion>((place) => ({
+      id: `google-${place.id}`,
+      name: place.displayName?.text ?? "店舗",
+      genre: place.primaryTypeDisplayName?.text ?? (keyword || "レストラン"),
+      budgetLabel: googlePriceLabel(place.priceLevel, amount),
+      averageBudget: googlePriceLabel(place.priceLevel, amount),
+      catchCopy:
+        [place.editorialSummary?.text, place.rating ? `Google評価 ${place.rating}/5` : ""]
+          .filter(Boolean)
+          .join(" / "),
+      address: place.formattedAddress ?? "",
+      access: "",
+      url: place.googleMapsUri ?? "",
+      imageUrl: "",
+      open: place.currentOpeningHours?.weekdayDescriptions?.join(" / ") ?? "",
+      close: "",
+      source: "google_places",
+    }))
+
+  if (shops.length === 0) return null
+
+  return {
+    amount,
+    area,
+    keyword,
+    budgetLabel: googlePriceLabel(googlePriceLevel(amount), amount),
+    source: "google_places",
+    sourceNote:
+      "Google Places APIの検索結果です。価格帯が取得できた店舗は実際の価格帯を表示しています。",
+    shops,
+  }
 }
 
 export async function getOpenStreetMapRestaurantSuggestions(params: {

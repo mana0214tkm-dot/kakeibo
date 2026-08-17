@@ -52,7 +52,8 @@ export function RestaurantSuggestions(props: RestaurantSuggestionsProps) {
       })
 
       if (!response.ok) {
-        throw new Error(`request failed: ${response.status}`)
+        const errorData = (await response.json()) as { error?: string }
+        throw new Error(errorData.error || `request failed: ${response.status}`)
       }
 
       const data = (await response.json()) as RestaurantSuggestionsResponse
@@ -60,7 +61,11 @@ export function RestaurantSuggestions(props: RestaurantSuggestionsProps) {
       setSelectedShopId(data.shops[0]?.id ?? "")
     } catch (fetchError) {
       console.error(fetchError)
-      setError("お店候補の取得に失敗しました。少し時間をおいてもう一度試してください。")
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : "お店候補の取得に失敗しました。"
+      )
     } finally {
       setLoading(false)
     }
@@ -102,7 +107,7 @@ export function RestaurantSuggestions(props: RestaurantSuggestionsProps) {
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
             1人あたりの予算でお店候補を探して、そのまま地図で場所も確認できます。
-            Hot Pepper API キーが未設定のときは、サンプル候補に自動で切り替わります。
+            Google PlacesまたはHot Pepper グルメの検索結果を表示します。
           </p>
         </div>
 

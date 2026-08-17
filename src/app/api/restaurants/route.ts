@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
+  getGooglePlacesRestaurantSuggestions,
   getHotPepperRestaurantSuggestions,
-  getOpenStreetMapRestaurantSuggestions,
 } from "@/lib/restaurants"
 
 function parseAmount(rawValue: string | null) {
@@ -22,43 +22,66 @@ export async function GET(request: NextRequest) {
   const area = searchParams.get("area")?.trim() ?? "新宿"
   const keyword = searchParams.get("keyword")?.trim() ?? "居酒屋"
   const count = parseCount(searchParams.get("count"))
-  const apiKey =
+  const googleApiKey =
+    process.env.GOOGLE_PLACES_API_KEY ??
+    process.env.GOOGLE_MAPS_API_KEY ??
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  const hotPepperApiKey =
     process.env.HOTPEPPER_API_KEY ??
     process.env.RECRUIT_API_KEY ??
     process.env.RESTAURANT_API_KEY
 
-  if (apiKey) {
-    try {
-      const liveResult = await getHotPepperRestaurantSuggestions({
-        apiKey,
-        amount,
-        area,
-        keyword,
-        count,
-      })
-
-      if (liveResult) {
-        return NextResponse.json(liveResult)
-      }
-    } catch (error) {
-      console.error("restaurant api fallback", error)
-    }
+  if (!googleApiKey && !hotPepperApiKey) {
+    return NextResponse.json(
+      {
+        error:
+          "正確なお店検索にはGoogle Places APIまたはHot Pepper APIのキー設定が必要です。",
+      },
+      { status: 503 }
+    )
   }
 
   try {
-    return NextResponse.json(
-      await getOpenStreetMapRestaurantSuggestions({
+    if (googleApiKey) {
+      const googleResult = await getGooglePlacesRestaurantSuggestions({
+        apiKey: googleApiKey,
         amount,
         area,
         keyword,
         count,
       })
-    )
+
+      if (googleResult) return NextResponse.json(googleResult)
+    }
+
+    if (!hotPepperApiKey) {
+      return NextResponse.json(
+        { error: "指定条件に合うGoogle Placesの店舗が見つかりませんでした。" },
+        { status: 404 }
+      )
+    }
+
+    const liveResult = await getHotPepperRestaurantSuggestions({
+      apiKey: hotPepperApiKey,
+      amount,
+      area,
+      keyword,
+      count,
+    })
+
+    if (!liveResult) {
+      return NextResponse.json(
+        { error: "指定した予算・エリア・ジャンルに合うお店が見つかりませんでした。" },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(liveResult)
   } catch (error) {
     console.error("restaurant search failed", error)
     return NextResponse.json(
-      { error: "検索結果を取得できませんでした。時間をおいて再度お試しください。" },
-      { status: 503 }
+      { error: "お店検索APIに接続できませんでした。時間をおいて再度お試しください。" },
+      { status: 502 }
     )
   }
 }
