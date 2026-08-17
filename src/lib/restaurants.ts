@@ -302,54 +302,111 @@ export async function getOpenStreetMapRestaurantSuggestions(params: {
   const area = params.area.trim()
   const keyword = params.keyword.trim()
   const count = Math.min(8, Math.max(1, params.count ?? 4))
-  const query = [area, keyword || "飲食店"].filter(Boolean).join(" ")
-  const searchParams = new URLSearchParams({
-    q: query,
+  const areaSearchParams = new URLSearchParams({
+    q: area || "東京",
     format: "jsonv2",
-    addressdetails: "1",
-    limit: String(count),
+    countrycodes: "jp",
+    limit: "1",
     "accept-language": "ja",
   })
-  const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?${searchParams.toString()}`,
+  const areaResponse = await fetch(
+    `https://nominatim.openstreetmap.org/search?${areaSearchParams.toString()}`,
     {
       cache: "no-store",
       headers: { "User-Agent": "kakeibo-restaurant-search/1.0" },
     }
   )
 
-  if (!response.ok) {
-    throw new Error(`OpenStreetMap request failed: ${response.status}`)
+  if (!areaResponse.ok) {
+    throw new Error(`OpenStreetMap area request failed: ${areaResponse.status}`)
   }
 
-  const results = (await response.json()) as Array<{
-    place_id?: number
-    display_name?: string
-    name?: string
-    type?: string
+  const areaResults = (await areaResponse.json()) as Array<{
     lat?: string
     lon?: string
   }>
-  const shops = results
-    .filter((place) => typeof place.place_id === "number")
-    .map<RestaurantSuggestion>((place) => ({
-      id: `osm-${place.place_id}`,
-      name: place.name || place.display_name?.split(",")[0] || "店舗",
-      genre: keyword || "飲食店",
+  const areaResult = areaResults[0]
+  if (!areaResult?.lat || !areaResult.lon) {
+    throw new Error("No Japanese area search results")
+  }
+
+  const overpassQuery = `
+[out:json][timeout:20];
+(
+  nwr(around:5000,${areaResult.lat},${areaResult.lon})[amenity~"restaurant|cafe|pub|bar|fast_food"];
+);
+out center tags;
+`
+  const restaurantResponse = await fetch(
+    `https://overpass-api.de/api/interpreter?${new URLSearchParams({ data: overpassQuery }).toString()}`,
+    {
+      cache: "no-store",
+      headers: { "User-Agent": "kakeibo-restaurant-search/1.0" },
+    }
+  )
+
+  if (!restaurantResponse.ok) {
+    throw new Error(`OpenStreetMap restaurant request failed: ${restaurantResponse.status}`)
+  }
+
+  const results = (await restaurantResponse.json()) as {
+    elements?: Array<{
+      type?: string
+      id?: number
+      lat?: number
+      lon?: number
+      center?: { lat?: number; lon?: number }
+      tags?: Record<string, string>
+    }>
+  }
+  const elements = (results.elements ?? []).filter(
+    (place) => typeof place.id === "number" && place.tags?.name
+  )
+  const keywordMatches = keyword
+    ? elements.filter((place) => {
+        const searchable = [
+          place.tags?.name,
+          place.tags?.cuisine,
+          place.tags?.amenity,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+        return searchable.includes(keyword.toLowerCase())
+      })
+    : elements
+  const selectedElements = (keywordMatches.length > 0 ? keywordMatches : elements).slice(
+    0,
+    count
+  )
+  const shops = selectedElements.map<RestaurantSuggestion>((place) => {
+    const tags = place.tags ?? {}
+    const latitude = place.lat ?? place.center?.lat
+    const longitude = place.lon ?? place.center?.lon
+    const address =
+      tags["addr:full"] ||
+      [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(" ") ||
+      `${area || "指定エリア"}周辺`
+
+    return {
+      id: `osm-${place.type}-${place.id}`,
+      name: tags.name ?? "店舗",
+      genre: tags.cuisine || tags.amenity || "飲食店",
       budgetLabel: buildMockBudgetLabel(amount),
       averageBudget: "予算は店舗ページでご確認ください",
       catchCopy: "OpenStreetMapの検索結果です。",
-      address: place.display_name ?? "",
+      address,
       access: "",
       url:
-        place.lat && place.lon
-          ? `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=18/${place.lat}/${place.lon}`
+        latitude !== undefined && longitude !== undefined
+          ? `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=18/${latitude}/${longitude}`
           : "",
       imageUrl: "",
-      open: "",
+      open: tags.opening_hours ?? "",
       close: "",
       source: "openstreetmap",
-    }))
+    }
+  })
 
   if (shops.length === 0) {
     throw new Error("No restaurant search results")
@@ -362,7 +419,9 @@ export async function getOpenStreetMapRestaurantSuggestions(params: {
     budgetLabel: buildMockBudgetLabel(amount),
     source: "openstreetmap",
     sourceNote:
-      "OpenStreetMapの検索結果です。予算は目安のため、店舗ページで詳細をご確認ください。",
+      keywordMatches.length > 0
+        ? "指定エリア周辺のOpenStreetMap検索結果です。予算は目安のため、店舗ページで詳細をご確認ください。"
+        : "指定エリア周辺の飲食店検索結果です。ジャンル情報がない店舗も含まれます。予算は目安のため、店舗ページで詳細をご確認ください。",
     shops,
   }
 }
